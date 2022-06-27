@@ -1,42 +1,36 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+	"strconv"
+)
 
 type Employee struct {
-	name    string
-	address string
-	job     string
-	remark  string
+	Name    string
+	Address string
+	Job     string
+	Remark  string
 }
 
 func main() {
 
-	// fmt.Println("Hello World")
-
-	// for i := 0; i <= 10; i++ {
-	// 	if i%2 == 0 {
-	// 		fmt.Println(i, "=", "genap")
-	// 	} else {
-	// 		fmt.Println(i, "=", "ganjil")
-	// 	}
-	// }
-
-	// nama := []string{"Andi", "Budi", "Cacing"}
-	// for i := 0; i < len(nama); i++ {
-	// 	fmt.Println(nama[i])
-	// }
-
 	var employee = []Employee{
-		{name: "Delon", address: "DelonAddress", job: "DelonJob", remark: "DelonRemark"},
-		{name: "KX", address: "KXAddress", job: "KXJob", remark: "KXRemark"},
-		{name: "Michael", address: "MichaelAddress", job: "MichaelJob", remark: "MichaelRemark"},
-		{name: "Lady", address: "LadyAddress", job: "LadyJob", remark: "LadyRemark"},
-		{name: "Dzul", address: "DzulAddress", job: "DzulJob", remark: "DzulRemark"},
-		{name: "Kevin", address: "KevinAddress", job: "KevinJob", remark: "KevinRemark"},
+		{Name: "Delon", Address: "DelonAddress", Job: "DelonJob", Remark: "DelonRemark"},
+		{Name: "KX", Address: "KXAddress", Job: "KXJob", Remark: "KXRemark"},
+		{Name: "Michael", Address: "MichaelAddress", Job: "MichaelJob", Remark: "MichaelRemark"},
+		{Name: "Lady", Address: "LadyAddress", Job: "LadyJob", Remark: "LadyRemark"},
+		{Name: "Dzul", Address: "DzulAddress", Job: "DzulJob", Remark: "DzulRemark"},
+		{Name: "Kevin", Address: "KevinAddress", Job: "KevinJob", Remark: "KevinRemark"},
 	}
 
-	for _, x := range employee {
-		fmt.Println(x)
+	if absen, err := strconv.Atoi(os.Args[1]); err != nil {
+		fmt.Println(err)
+	} else {
+		if absen > len(employee) {
+			fmt.Println("Enter 0 - " + strconv.Itoa(len(employee)))
+		} else {
+			fmt.Println(employee[absen])
+		}
 	}
-
 }

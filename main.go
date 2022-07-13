@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	interfaces "projek-pertama/interface"
 	"projek-pertama/model"
 	"strconv"
 	"sync"
@@ -17,7 +16,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-var PORT = ":8080"
+var PORT = ":8088"
 
 var users = []*model.User{
 	{
@@ -62,15 +61,13 @@ var db *sql.DB
 
 func dbConn() *sql.DB {
 	var err error
-	// connString := fmt.Sprintf("server=%s;port=%d; trusted_connection=yes/golang_db", server, port)
-	// db, err = sql.Open("sqlserver", connString)
 	db, err := sql.Open("sqlserver", "server=localhost;database=golang_db;trusted_connection=yes")
 	if err != nil {
 		log.Fatal("Error creating connection pool: " + err.Error())
 	}
-	if x := db.Ping(); x != nil {
-		log.Fatal(x)
-	}
+	// if x := db.Ping(); x != nil {
+	// 	log.Fatal(x)
+	// }
 	return db
 }
 
@@ -79,30 +76,15 @@ func main() {
 	// http.HandleFunc("/register", reg)
 	// http.ListenAndServe(PORT, nil)
 
+	db = dbConn()
+	defer db.Close()
+
 	r := mux.NewRouter()
-	r.HandleFunc("/users", UsersHandler)
-	r.HandleFunc("/users/{id}", UsersHandler)
+	r.HandleFunc("/greet", greet)
+	r.HandleFunc("/orders", UsersHandler)
+	r.HandleFunc("/orders/{id}", UsersHandler)
 	http.Handle("/", r)
 	http.ListenAndServe(PORT, nil)
-
-	// var name = []string{"a", "b", "c", "d", "e", "f"}
-
-	// for i := 0; i < len(name); i++ {
-	// 	go print(name[i])
-	// }
-	// time.Sleep(1 * time.Second)
-
-	// var err error
-	// connString := fmt.Sprintf("server=%s;port=%d; trusted_connection=yes", server, port)
-	// db, err = sql.Open("sqlserver", connString)
-	// if err != nil {
-	// 	log.Fatal("Error creating connection pool: " + err.Error())
-	// }
-	// if x := db.Ping(); x != nil {
-	// 	log.Fatal(x)
-	// }
-
-	//defer db.Close()
 
 }
 
@@ -110,43 +92,6 @@ func greet(w http.ResponseWriter, r *http.Request) {
 	msg := "Hello world"
 	w.Header().Add("asd", "aq12")
 	fmt.Fprint(w, msg)
-}
-
-func reg(w http.ResponseWriter, r *http.Request) {
-	// userSvc := interfaces.NewUserService()
-	// now := time.Now()
-	// temp := userSvc.Register(&model.User{
-	// 	Id:        1,
-	// 	Username:  "Kevin",
-	// 	Email:     "Kevin@test.com",
-	// 	Password:  "123123",
-	// 	Age:       22,
-	// 	CreatedAt: now,
-	// 	UpdatedAt: now,
-	// })
-
-	// w.Write(temp)
-
-	//------------------------------------------------------------------
-
-	decoder := json.NewDecoder(r.Body)
-	var user model.User
-	if err := decoder.Decode(&user); err != nil {
-		//w.Write([]byte("error"))
-		fmt.Fprint(w, "err")
-		return
-	}
-
-	userSvc := interfaces.NewUserService()
-	temp, err := userSvc.Register(&user)
-
-	w.Header().Add("Content-Type", "application/json")
-	if err != nil {
-		w.Write([]byte(err.Error()))
-	} else {
-		w.Write(temp)
-	}
-
 }
 
 func UsersHandler(w http.ResponseWriter, r *http.Request) {
@@ -157,174 +102,180 @@ func UsersHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if id != "" { // get by id
-			getUsersById(w, r, tempId)
+			getOrdersById(w, r, tempId)
 		} else { // get all
-			getUsers(w, r)
+			getOrders(w, r)
 		}
 	case http.MethodPost:
-		createUsers(w, r)
+		createOrder(w, r)
 	case http.MethodPut:
-		updateUser(w, r, tempId)
+		updateOrder(w, r, tempId)
 	case http.MethodDelete:
-		deleteUser(w, r, tempId)
+		deleteOrder(w, r, tempId)
 	}
 }
 
-func getUsersById(w http.ResponseWriter, r *http.Request, id int) {
-	// for _, value := range users {
-	// 	if value.Id == id {
-	// 		json.NewEncoder(w).Encode(value)
-	// 	}
-	// }
+func getOrdersById(w http.ResponseWriter, r *http.Request, id int) {
 
-	db := dbConn()
-	var user model.User
+	var order model.Orders
+	var items []model.Items
 
 	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelfunc()
 
-	query := "SELECT id, username, email, password, age FROM dbo.MsUser WHERE Id = @Id"
-	err := db.QueryRowContext(ctx, query, sql.Named("Id", id)).Scan(&user.Id, &user.Username, &user.Password, &user.Email, &user.Age)
+	query := "SELECT order_id, customer_name, ordered_at FROM dbo.orders WHERE order_id = @Id"
+	err := db.QueryRowContext(ctx, query, sql.Named("Id", id)).Scan(&order.OrderId, &order.CustomerName, &order.OrderedAt)
 	if err != nil {
 		panic(err)
 	}
-	db.Close()
-	json.NewEncoder(w).Encode(user)
+
+	queryItem := "SELECT item_id, item_code, description, quantity, order_id FROM dbo.items WHERE order_id = @Id"
+	searchedItem, err2 := db.Query(queryItem, sql.Named("Id", order.OrderId))
+	if err2 != nil {
+		panic(err2)
+	}
+
+	for searchedItem.Next() {
+		var item model.Items
+		err3 := searchedItem.Scan(&item.ItemId, &item.ItemCode, &item.Description, &item.Quantity, &item.OrderId)
+		if err3 != nil {
+			panic(err3)
+		}
+		items = append(items, item)
+	}
+	order.Item = items
+
+	json.NewEncoder(w).Encode(order)
 }
 
-func getUsers(w http.ResponseWriter, r *http.Request) {
-	db := dbConn()
-	users := []model.User{}
-	query := "SELECT id, username, email, password, age FROM dbo.MsUser"
+func getOrders(w http.ResponseWriter, r *http.Request) {
+	orders := []model.Orders{}
+	query := "SELECT order_id, customer_name, ordered_at FROM dbo.orders"
 	searched, err := db.Query(query)
 	if err != nil {
 		panic(err)
 	}
 
 	for searched.Next() {
-		var user model.User
-		err := searched.Scan(&user.Id, &user.Username, &user.Password, &user.Email, &user.Age)
+		var order model.Orders
+		var items []model.Items
+
+		err := searched.Scan(&order.OrderId, &order.CustomerName, &order.OrderedAt)
 		if err != nil {
 			panic(err)
 		}
-		users = append(users, user)
+		query := "SELECT item_id, item_code, description, quantity, order_id FROM dbo.items WHERE order_id = @Id"
+		searchedItem, err2 := db.Query(query, sql.Named("Id", order.OrderId))
+		if err2 != nil {
+			panic(err2)
+		}
+
+		for searchedItem.Next() {
+			var item model.Items
+			err3 := searchedItem.Scan(&item.ItemId, &item.ItemCode, &item.Description, &item.Quantity, &item.OrderId)
+			if err3 != nil {
+				panic(err3)
+			}
+			items = append(items, item)
+		}
+		order.Item = items
+		orders = append(orders, order)
 	}
-	db.Close()
-	json.NewEncoder(w).Encode(users)
+	json.NewEncoder(w).Encode(orders)
 }
 
-func createUsers(w http.ResponseWriter, r *http.Request) {
-	// var user = &model.User{}
-	// if err := json.NewDecoder(r.Body).Decode(user); err != nil {
-	// 	json.NewEncoder(w).Encode(err)
-	// 	log.Fatal(err)
-	// } else {
-	// 	user.CreatedAt = time.Now()
-	// 	users = append(users, user)
-	// 	fmt.Fprint(w, "Success Create")
-	// }
-	var user = &model.User{}
-
-	if err := json.NewDecoder(r.Body).Decode(user); err != nil {
+func createOrder(w http.ResponseWriter, r *http.Request) {
+	var order = &model.Orders{}
+	if err := json.NewDecoder(r.Body).Decode(order); err != nil {
 		json.NewEncoder(w).Encode(err)
 		log.Fatal(err)
 	} else {
-		db := dbConn()
-		query := "INSERT INTO MsUser (username, password, email, age, createdate, updatedate) VALUES(@username, @password, @email, @age, @createdate, @updatedate)"
+		query := "INSERT INTO dbo.orders (customer_name, ordered_at) VALUES(@customer_name, @ordered_at); select order_id = convert(bigint, SCOPE_IDENTITY())"
+		queryItem := "INSERT INTO dbo.items (item_code, description, quantity, order_id) VALUES(@item_code, @description, @quantity, @order_id)"
+		orderedAt := time.Now()
 		ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancelfunc()
-
-		res, err := db.ExecContext(ctx, query,
-			sql.Named("username", user.Username),
-			sql.Named("password", user.Password),
-			sql.Named("email", user.Email),
-			sql.Named("age", user.Age),
-			sql.Named("createdate", time.Now()),
-			sql.Named("updatedate", nil))
+		res, err := db.QueryContext(ctx, query,
+			sql.Named("customer_name", order.CustomerName),
+			sql.Named("ordered_at", orderedAt))
 		if err != nil {
 			log.Fatal(err)
 		}
-		res.LastInsertId()
-		res.RowsAffected()
-		defer db.Close()
-		w.Write([]byte("User added successfully"))
+
+		var orderId int
+		for res.Next() {
+			err := res.Scan(&orderId)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+
+		for _, item := range order.Item {
+			_, err := db.ExecContext(ctx, queryItem,
+				sql.Named("item_code", item.ItemCode),
+				sql.Named("description", item.Description),
+				sql.Named("quantity", item.Quantity),
+				sql.Named("order_id", orderId))
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		w.Write([]byte("Order added successfully"))
 	}
 
 }
 
-func updateUser(w http.ResponseWriter, r *http.Request, id int) {
-	// for _, value := range users {
-	// 	if value.Id == id {
-	// 		var user = &model.User{}
-	// 		if err := json.NewDecoder(r.Body).Decode(user); err != nil {
-	// 			json.NewEncoder(w).Encode(err)
-	// 			log.Fatal(err)
-	// 		} else {
-	// 			// value = &model.User{
-	// 			// 	Id:        user.Id,
-	// 			// 	Username:  user.Username,
-	// 			// 	Email:     user.Email,
-	// 			// 	Password:  user.Password,
-	// 			// 	Age:       user.Age,
-	// 			// 	UpdatedAt: time.Now(),
-	// 			// }
-	// 			value.Id = user.Id
-	// 			value.Username = user.Username
-	// 			value.Email = user.Email
-	// 			value.Password = user.Password
-	// 			value.Age = user.Age
-	// 			value.UpdatedAt = time.Now()
-	// 			fmt.Fprint(w, "Success Edit")
-	// 		}
-	// 	}
-	// }
-	//fmt.Println(users)
+func updateOrder(w http.ResponseWriter, r *http.Request, id int) {
 
-	var user = &model.User{}
-
-	if err := json.NewDecoder(r.Body).Decode(user); err != nil {
+	var order = &model.Orders{}
+	if err := json.NewDecoder(r.Body).Decode(order); err != nil {
 		json.NewEncoder(w).Encode(err)
 		log.Fatal(err)
 	} else {
-		db := dbConn()
-		query := "UPDATE dbo.MsUser SET username = @username, email = @email, password = @password, age = @age, updatedate = @updatedate WHERE id = @id"
+		query := "UPDATE dbo.orders SET customer_name = @customer_name, ordered_at = @ordered_at WHERE order_id = @id"
+		query2 := "UPDATE dbo.items SET item_code = @item_code, description = @description, quantity = @quantity WHERE item_id = @item_id"
 		ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancelfunc()
 
-		res, err := db.ExecContext(ctx, query,
-			sql.Named("username", user.Username),
-			sql.Named("password", user.Password),
-			sql.Named("email", user.Email),
-			sql.Named("age", user.Age),
-			sql.Named("updatedate", time.Now()),
+		_, err := db.ExecContext(ctx, query,
+			sql.Named("customer_name", order.CustomerName),
+			sql.Named("ordered_at", order.OrderedAt),
 			sql.Named("id", id))
 		if err != nil {
 			log.Fatal(err)
 		}
-		res.LastInsertId()
-		res.RowsAffected()
-		defer db.Close()
-		w.Write([]byte("User updated successfully"))
+
+		for _, item := range order.Item {
+			_, err := db.ExecContext(ctx, query2,
+				sql.Named("item_code", item.ItemCode),
+				sql.Named("description", item.Description),
+				sql.Named("quantity", item.Quantity),
+				sql.Named("item_id", item.ItemId))
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		w.Write([]byte("Order updated successfully"))
 	}
 }
 
-func deleteUser(w http.ResponseWriter, r *http.Request, id int) {
-	// for i, value := range users {
-	// 	if value.Id == id {
-	// 		users = users[:i+copy(users[i:], users[i+1:])]
-	// 		fmt.Fprint(w, "Success Delete")
-	// 	}
-	// }
-	db := dbConn()
-	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
+func deleteOrder(w http.ResponseWriter, r *http.Request, id int) {
+
+	ctx, cancelfunc := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancelfunc()
 
-	_, err := db.ExecContext(ctx, "DELETE FROM dbo.MsUser WHERE id=@id",
+	_, err := db.ExecContext(ctx, "DELETE FROM dbo.orders WHERE order_id=@id",
 		sql.Named("id", id))
 
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
-	w.Write([]byte("User deleted successfully"))
+
+	_, err2 := db.ExecContext(ctx, "DELETE FROM dbo.items WHERE order_id=@id",
+		sql.Named("id", id))
+
+	if err2 != nil {
+		log.Fatal(err2)
+	}
+	w.Write([]byte("Order deleted successfully"))
 }

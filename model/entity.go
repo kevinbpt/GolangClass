@@ -11,3 +11,18 @@ type User struct {
 	CreatedAt time.Time `json:"CreatedAt,omitempty"`
 	UpdatedAt time.Time `json:"UpdatedAt,omitempty"`
 }
+
+type Orders struct {
+	OrderId      int       `json:"OrderId,omitempty"`
+	CustomerName string    `json:"CustomerName,omitempty"`
+	OrderedAt    time.Time `json:"OrderedAt,omitempty"`
+	Item         []Items   `json:"Item,omitempty"`
+}
+
+type Items struct {
+	ItemId      int
+	ItemCode    string
+	Description string
+	Quantity    int
+	OrderId     int
+}

@@ -13,48 +13,52 @@ import (
 	"time"
 
 	_ "github.com/denisenkom/go-mssqldb"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
+	"golang.org/x/crypto/bcrypt"
 )
+
+const secretkey = "jwtsecret"
 
 var PORT = ":8088"
 
-var users = []*model.User{
-	{
-		Id:       1,
-		Username: "andi123",
-		Email:    "andi123@gmail.com",
-		Password: "password123",
-		Age:      9,
-	},
-	{
-		Id:       2,
-		Username: "budi123",
-		Email:    "budi123@gmail.com",
-		Password: "password123",
-		Age:      9,
-	},
-	{
-		Id:       3,
-		Username: "cantya123",
-		Email:    "cantya123@gmail.com",
-		Password: "password123",
-		Age:      9,
-	},
-	{
-		Id:       4,
-		Username: "cantya123",
-		Email:    "dantya123@gmail.com",
-		Password: "password123",
-		Age:      9,
-	},
-	{
-		Id:       5,
-		Username: "2312",
-		Email:    "4415@gmail.com",
-		Password: "password123",
-		Age:      9,
-	},
-}
+// var users = []*model.User{
+// 	{
+// 		Id:       1,
+// 		Username: "andi123",
+// 		Email:    "andi123@gmail.com",
+// 		Password: "password123",
+// 		Age:      9,
+// 	},
+// 	{
+// 		Id:       2,
+// 		Username: "budi123",
+// 		Email:    "budi123@gmail.com",
+// 		Password: "password123",
+// 		Age:      9,
+// 	},
+// 	{
+// 		Id:       3,
+// 		Username: "cantya123",
+// 		Email:    "cantya123@gmail.com",
+// 		Password: "password123",
+// 		Age:      9,
+// 	},
+// 	{
+// 		Id:       4,
+// 		Username: "cantya123",
+// 		Email:    "dantya123@gmail.com",
+// 		Password: "password123",
+// 		Age:      9,
+// 	},
+// 	{
+// 		Id:       5,
+// 		Username: "2312",
+// 		Email:    "4415@gmail.com",
+// 		Password: "password123",
+// 		Age:      9,
+// 	},
+// }
 
 var wg sync.WaitGroup
 var db *sql.DB
@@ -81,8 +85,18 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/greet", greet)
-	r.HandleFunc("/orders", UsersHandler)
-	r.HandleFunc("/orders/{id}", UsersHandler)
+
+	readRoute := r.PathPrefix("/read").Subrouter()
+	readRoute.HandleFunc("", readdata)
+	readRoute.Use(MiddlewareAuth)
+
+	orderRoute := r.PathPrefix("/orders").Subrouter()
+	orderRoute.HandleFunc("", UsersHandler)
+	orderRoute.HandleFunc("/{id}", UsersHandler)
+	orderRoute.Use(MiddlewareAuth)
+
+	r.HandleFunc("/login", login).Methods("POST")
+	r.HandleFunc("/register", createUsers).Methods("POST")
 	http.Handle("/", r)
 	http.ListenAndServe(PORT, nil)
 
@@ -92,6 +106,102 @@ func greet(w http.ResponseWriter, r *http.Request) {
 	msg := "Hello world"
 	w.Header().Add("asd", "aq12")
 	fmt.Fprint(w, msg)
+}
+
+func readdata(w http.ResponseWriter, r *http.Request) {
+	user := &[]model.UserData{}
+	urlData := "https://random-data-api.com/api/users/random_user?size=10"
+	var data, err = http.Get(urlData)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := json.NewDecoder(data.Body).Decode(user); err != nil {
+		json.NewEncoder(w).Encode(err)
+		log.Fatal(err)
+	} else {
+		json.NewEncoder(w).Encode(user)
+	}
+
+}
+
+func login(w http.ResponseWriter, r *http.Request) {
+	var auth = &model.Auth{}
+	if err := json.NewDecoder(r.Body).Decode(auth); err != nil {
+		json.NewEncoder(w).Encode(err)
+		log.Fatal(err)
+	} else {
+		var user model.User
+
+		ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelfunc()
+
+		query := "SELECT username, password FROM dbo.MsUser WHERE username= @username"
+		err := db.QueryRowContext(ctx, query, sql.Named("username", auth.Username)).Scan(&user.Username, &user.Password)
+		if err != nil {
+			panic(err)
+		}
+
+		err2 := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(auth.Password))
+		if err2 != nil {
+			log.Fatal(err2)
+		}
+
+		validToken, err3 := GenerateJWT(user.Username)
+		if err3 != nil {
+			log.Fatal(err3)
+		}
+		var token model.Token
+		token.Username = user.Username
+		token.Token = validToken
+		json.NewEncoder(w).Encode(token)
+	}
+}
+
+func createUsers(w http.ResponseWriter, r *http.Request) {
+	var user = &model.User{}
+
+	if err := json.NewDecoder(r.Body).Decode(user); err != nil {
+		json.NewEncoder(w).Encode(err)
+		log.Fatal(err)
+	} else {
+		hashed, errHash := bcrypt.GenerateFromPassword([]byte(user.Password), 14)
+		if errHash != nil {
+			log.Fatal(errHash)
+		}
+		query := "INSERT INTO MsUser (username, password, email, age, createdate, updatedate) VALUES(@username, @password, @email, @age, @createdate, @updatedate)"
+		ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelfunc()
+		_, err := db.ExecContext(ctx, query,
+			sql.Named("username", user.Username),
+			sql.Named("password", string(hashed)),
+			sql.Named("email", user.Email),
+			sql.Named("age", user.Age),
+			sql.Named("createdate", time.Now()),
+			sql.Named("updatedate", time.Now()))
+		if err != nil {
+			log.Fatal(err)
+		}
+		w.Write([]byte("User added successfully"))
+	}
+
+}
+
+func GenerateJWT(username string) (string, error) {
+	var mySigningKey = []byte(secretkey)
+	token := jwt.New(jwt.SigningMethodHS256)
+	claims := token.Claims.(jwt.MapClaims)
+
+	claims["authorized"] = true
+	claims["username"] = username
+	claims["exp"] = time.Now().Add(time.Minute * 30).Unix()
+
+	tokenString, err := token.SignedString(mySigningKey)
+
+	if err != nil {
+		return "", err
+	}
+	return tokenString, nil
 }
 
 func UsersHandler(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +223,45 @@ func UsersHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		deleteOrder(w, r, tempId)
 	}
+}
+
+func MiddlewareAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokenString := r.Header.Get("Authorization")
+		nameString := r.Header.Get(("Username"))
+		if tokenString == "" || nameString == "" {
+			fmt.Fprint(w, "Please login")
+			return
+		}
+
+		claims := jwt.MapClaims{}
+		_, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			return []byte(secretkey), nil
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		if claims["username"] != nameString {
+			fmt.Fprint(w, "Please login")
+			return
+		}
+
+		// var tm time.Time
+		// switch exp := claims["exp"].(type) {
+		// case float64:
+		// 	tm = time.Unix(int64(exp), 0)
+		// case json.Number:
+		// 	v, _ := exp.Int64()
+		// 	tm = time.Unix(v, 0)
+		// }
+
+		// if tm.Before(time.Now()) {
+		// 	fmt.Fprint(w, "Please login")
+		// 	return
+		// }
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 func getOrdersById(w http.ResponseWriter, r *http.Request, id int) {

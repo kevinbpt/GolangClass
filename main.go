@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"html/template"
+	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"projek-pertama/model"
 	"strconv"
@@ -19,8 +22,22 @@ import (
 )
 
 const secretkey = "jwtsecret"
+const htmlPath = "static/weather.html"
+const jsonPath = "static/weather.json"
 
 var PORT = ":8088"
+
+type Status struct {
+	Water int `json:"water"`
+	Wind  int `json:"wind"`
+}
+
+type Weather struct {
+	Status  Status `json:"status"`
+	Remarks string `json:"remarks"`
+}
+
+var data Weather
 
 // var users = []*model.User{
 // 	{
@@ -94,13 +111,56 @@ func main() {
 	orderRoute.HandleFunc("", UsersHandler)
 	orderRoute.HandleFunc("/{id}", UsersHandler)
 	orderRoute.Use(MiddlewareAuth)
-
+	go RNG()
+	r.HandleFunc("/weather", TriggerWeather)
 	r.HandleFunc("/login", login).Methods("POST")
 	r.HandleFunc("/register", createUsers).Methods("POST")
 	http.Handle("/", r)
 	http.ListenAndServe(PORT, nil)
 
 }
+
+func TriggerWeather(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "text/html")
+	file, _ := ioutil.ReadFile(jsonPath)
+	json.Unmarshal(file, &data)
+	template, _ := template.ParseFiles(htmlPath)
+	tempData := Weather{
+		Status: Status{
+			Water: data.Status.Water,
+			Wind:  data.Status.Wind,
+		},
+		Remarks: data.Remarks,
+	}
+	template.Execute(w, tempData)
+
+}
+
+func RNG() {
+	for {
+
+		data.Status.Water = rand.Intn(20-1) + 1
+		data.Status.Wind = rand.Intn(20-1) + 1
+		if data.Status.Water < 5 && data.Status.Wind < 6 {
+			data.Remarks = "aman"
+		} else if (data.Status.Water >= 6 && data.Status.Water <= 8) || (data.Status.Water >= 7 && data.Status.Wind <= 15) {
+			data.Remarks = "siaga"
+		} else if data.Status.Water > 8 || data.Status.Wind > 15 {
+			data.Remarks = "bahaya"
+		}
+		GenerateWeatherStatusFile(data)
+		time.Sleep(3 * time.Second)
+	}
+}
+
+func GenerateWeatherStatusFile(data Weather) {
+
+	file, _ := json.MarshalIndent(data, "", "    ")
+
+	_ = ioutil.WriteFile("static/weather.json", file, 0644)
+}
+
+//------------------------
 
 func greet(w http.ResponseWriter, r *http.Request) {
 	msg := "Hello world"
@@ -136,8 +196,8 @@ func login(w http.ResponseWriter, r *http.Request) {
 		ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancelfunc()
 
-		query := "SELECT username, password FROM dbo.MsUser WHERE username= @username"
-		err := db.QueryRowContext(ctx, query, sql.Named("username", auth.Username)).Scan(&user.Username, &user.Password)
+		query := "SELECT password FROM dbo.MsUser WHERE username= @username"
+		err := db.QueryRowContext(ctx, query, sql.Named("username", auth.Username)).Scan(&user.Password)
 		if err != nil {
 			panic(err)
 		}
@@ -147,12 +207,12 @@ func login(w http.ResponseWriter, r *http.Request) {
 			log.Fatal(err2)
 		}
 
-		validToken, err3 := GenerateJWT(user.Username)
+		validToken, err3 := GenerateJWT(auth.Username)
 		if err3 != nil {
 			log.Fatal(err3)
 		}
 		var token model.Token
-		token.Username = user.Username
+		token.Username = auth.Username
 		token.Token = validToken
 		json.NewEncoder(w).Encode(token)
 	}

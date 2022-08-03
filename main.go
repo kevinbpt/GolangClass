@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"projek-pertama/config"
 	"projek-pertama/model"
 	"strconv"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	_ "github.com/denisenkom/go-mssqldb"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
+	"github.com/ilyakaznacheev/cleanenv"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -101,7 +103,7 @@ func main() {
 	defer db.Close()
 
 	r := mux.NewRouter()
-	r.HandleFunc("/greet", greet)
+	r.HandleFunc("/getconfig", GetConfig)
 
 	readRoute := r.PathPrefix("/read").Subrouter()
 	readRoute.HandleFunc("", readdata)
@@ -162,10 +164,20 @@ func GenerateWeatherStatusFile(data Weather) {
 
 //------------------------
 
-func greet(w http.ResponseWriter, r *http.Request) {
-	msg := "Hello world"
-	w.Header().Add("asd", "aq12")
-	fmt.Fprint(w, msg)
+func GetConfig(w http.ResponseWriter, r *http.Request) {
+
+	var cfg config.ConfigDatabase
+
+	// err := cleanenv.ReadConfig("config/config.yml", &cfg)
+	err := cleanenv.ReadEnv(&cfg)
+	if err != nil {
+		fmt.Fprint(w, err.Error())
+		return
+	}
+
+	fmt.Fprint(w, cfg.Port)
+	fmt.Fprint(w, cfg.Host)
+	fmt.Fprint(w, cfg.Name)
 }
 
 func readdata(w http.ResponseWriter, r *http.Request) {
@@ -243,8 +255,8 @@ func createUsers(w http.ResponseWriter, r *http.Request) {
 			log.Fatal(err)
 		}
 		w.Write([]byte("User added successfully"))
-	}
 
+	}
 }
 
 func GenerateJWT(username string) (string, error) {
@@ -254,7 +266,7 @@ func GenerateJWT(username string) (string, error) {
 
 	claims["authorized"] = true
 	claims["username"] = username
-	claims["exp"] = time.Now().Add(time.Minute * 30).Unix()
+	//claims["exp"] = time.Now().Add(time.Minute * 30).Unix()
 
 	tokenString, err := token.SignedString(mySigningKey)
 
